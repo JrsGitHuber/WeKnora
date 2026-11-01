@@ -128,7 +128,9 @@ type AgentConfig struct {
 	// the gate's configured timeout. The wait is always bounded (no leak).
 	MCPAuthWaitTimeout int `json:"mcp_auth_wait_timeout,omitempty"`
 	// AttachmentParseWaitTimeoutSec bounds how long reading an attachment waits for
-	// a file that is still being parsed. <=0 uses the server default.
+	// a file that is still being parsed. 0 uses the server default; -1 skips
+	// OCR/extraction for images and PDFs (originals / rendered pages are kept
+	// for direct viewing; other file types parse as usual).
 	AttachmentParseWaitTimeoutSec int `json:"-"`
 	// AttachmentSandboxCopies maps a sandbox path staged for this turn to the
 	// attachment:// path of the same stored attachment.

@@ -1765,10 +1765,22 @@ func attachmentParseWaitTimeout() time.Duration {
 	return defaultAttachmentParseWaitTimeout
 }
 
+// agentAttachmentWaitTimeout resolves the per-agent override of the attachment
+// parse wait. Only positive values override; -1 skips parsing itself at upload
+// time (see types.TemporaryDocumentCreateOptions.SkipParsing) and keeps the
+// default wait here.
+func agentAttachmentWaitTimeout(agent *types.CustomAgent) time.Duration {
+	if agent != nil && agent.Config.AttachmentParseWaitTimeoutSec > 0 {
+		return time.Duration(agent.Config.AttachmentParseWaitTimeoutSec) * time.Second
+	}
+	return attachmentParseWaitTimeout()
+}
+
 // resolveTemporaryAttachments selects prompt content for pre-uploaded documents
 // after the SSE stream is live. When any attachment is still parsing it emits a
-// "attachment_parsing" timeline step and waits (bounded); unfinished attachments
-// are skipped rather than blocking or failing the whole turn.
+// "attachment_parsing" timeline step and waits (bounded; -1 skips parsing at
+// upload time, so readiness is quick); unfinished attachments are skipped
+// rather than blocking or failing the whole turn.
 func (h *Handler) resolveTemporaryAttachments(streamCtx *sseStreamContext, reqCtx *qaRequestContext) {
 	if len(reqCtx.attachmentIDs) == 0 {
 		return
@@ -1792,10 +1804,7 @@ func (h *Handler) resolveTemporaryAttachments(streamCtx *sseStreamContext, reqCt
 				Iteration:  0,
 			},
 		})
-		waitTimeout := attachmentParseWaitTimeout()
-		if reqCtx.customAgent != nil && reqCtx.customAgent.Config.AttachmentParseWaitTimeoutSec > 0 {
-			waitTimeout = time.Duration(reqCtx.customAgent.Config.AttachmentParseWaitTimeoutSec) * time.Second
-		}
+		waitTimeout := agentAttachmentWaitTimeout(reqCtx.customAgent)
 		h.waitForAttachments(ctx, tenantID, sessionID, reqCtx.attachmentIDs, waitTimeout)
 	}
 
@@ -1891,10 +1900,7 @@ func (h *Handler) awaitImageAttachmentsForAgent(streamCtx *sseStreamContext, req
 		SessionID: reqCtx.sessionID,
 		Data:      event.AgentToolCallData{ToolCallID: toolCallID, ToolName: "attachment_parsing"},
 	})
-	waitTimeout := attachmentParseWaitTimeout()
-	if reqCtx.customAgent.Config.AttachmentParseWaitTimeoutSec > 0 {
-		waitTimeout = time.Duration(reqCtx.customAgent.Config.AttachmentParseWaitTimeoutSec) * time.Second
-	}
+	waitTimeout := agentAttachmentWaitTimeout(reqCtx.customAgent)
 	h.waitForAttachments(ctx, tenantID, reqCtx.sessionID, imageIDs, waitTimeout)
 	ready, skipped := h.partitionReadyAttachments(ctx, tenantID, reqCtx.sessionID, imageIDs)
 	output := fmt.Sprintf("已解析 %d 个附件", len(ready))
@@ -2036,8 +2042,11 @@ func (h *Handler) hasPendingAttachments(ctx context.Context, tenantID uint64, se
 }
 
 // waitForAttachments polls until no attachment is pending or the timeout / ctx
-// cancellation fires.
+// cancellation fires. A non-positive timeout skips the wait entirely (agent -1).
 func (h *Handler) waitForAttachments(ctx context.Context, tenantID uint64, sessionID string, ids []string, timeout time.Duration) {
+	if timeout <= 0 {
+		return
+	}
 	deadline := time.Now().Add(timeout)
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()

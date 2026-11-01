@@ -461,6 +461,8 @@ func TestReadFileExecutionTimeoutFollowsAttachmentWait(t *testing.T) {
 	tool := NewReadFileTool(nil).WithAttachments(attachment.NewReader(&fakeAttachmentStore{}, 90*time.Second, nil))
 	assert.Equal(t, 95*time.Second, tool.ExecutionTimeout())
 	assert.Contains(t, tool.Description(), "/images/N")
+	skip := NewReadFileTool(nil).WithAttachments(attachment.NewReader(&fakeAttachmentStore{}, 0, nil))
+	assert.Equal(t, 5*time.Second, skip.ExecutionTimeout())
 }
 
 func TestReadFileWorkspaceReturnsImageFilesAsImages(t *testing.T) {

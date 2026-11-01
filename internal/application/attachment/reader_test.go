@@ -332,3 +332,34 @@ func TestChartPromptDoesNotReuseLegacyUnstructuredObservation(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, calls, "reuse the new observation, not the legacy OCR list")
 }
+
+type flippingStore struct {
+	doc       *types.TemporaryDocument
+	flipAfter int
+	loads     int
+}
+
+func (s *flippingStore) SessionAttachments(context.Context) (types.MessageAttachments, error) {
+	return types.MessageAttachments{{ID: s.doc.ID, FileName: "report.pdf"}}, nil
+}
+
+func (s *flippingStore) TemporaryDocument(context.Context, string) (*types.TemporaryDocument, error) {
+	s.loads++
+	if s.loads > s.flipAfter {
+		s.doc.Status = types.TemporaryDocumentStatusReady
+	}
+	return s.doc, nil
+}
+
+func TestAwaitDocumentZeroWaitSkipsUnready(t *testing.T) {
+	store := &flippingStore{
+		doc:       &types.TemporaryDocument{ID: "document", Status: types.TemporaryDocumentStatusProcessing},
+		flipAfter: 1 << 30,
+	}
+	reader := NewReader(store, 0, nil)
+	require.Equal(t, time.Duration(0), reader.WaitTimeout())
+	doc, err := reader.awaitDocument(t.Context(), "document")
+	require.NoError(t, err)
+	require.Equal(t, types.TemporaryDocumentStatusProcessing, doc.Status)
+	require.Equal(t, 1, store.loads, "must not poll when the parse wait is skipped")
+}

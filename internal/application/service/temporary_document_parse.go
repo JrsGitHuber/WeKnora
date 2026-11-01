@@ -165,6 +165,11 @@ func (s *temporaryDocumentService) parse(
 	ext := document.FileType
 	var options types.TemporaryDocumentCreateOptions
 	_ = json.Unmarshal(document.ProcessingOptions, &options)
+	if options.SkipParsing && docparser.IsImageFormat(ext) {
+		return "", []types.TemporaryDocumentImage{{
+			OriginalRef: document.ResourceRef, URL: document.ResourceRef, MimeType: document.MimeType,
+		}}, map[string]string{"parser": "skipped"}, nil
+	}
 	if options.ParserEngine == "" || options.ParserEngine == "auto" {
 		if tenant, ok := ctx.Value(types.TenantInfoContextKey).(*types.Tenant); ok && tenant != nil {
 			options.ParserEngine = tenant.ParserEngineConfig.ResolveChatParserEngine(ext)
@@ -199,6 +204,16 @@ func (s *temporaryDocumentService) parse(
 	if tenant, ok := ctx.Value(types.TenantInfoContextKey).(*types.Tenant); ok && tenant != nil &&
 		tenant.ParserEngineConfig != nil {
 		request.ParserEngineOverrides = tenant.ParserEngineConfig.ToOverridesMap()
+	}
+	if options.SkipParsing && strings.TrimPrefix(ext, ".") == "pdf" {
+		// Treat PDFs like image uploads: render every page to an image instead
+		// of extracting text, so the model views the pages directly.
+		parserEngine = docparser.BuiltinEngineName
+		request.ParserEngine = parserEngine
+		if request.ParserEngineOverrides == nil {
+			request.ParserEngineOverrides = map[string]string{}
+		}
+		request.ParserEngineOverrides["pdf_force_scanned"] = "true"
 	}
 	deps := docparser.ReaderDeps{Overrides: request.ParserEngineOverrides, Remote: s.documentReader}
 	if s.tenantService != nil {
@@ -254,7 +269,10 @@ func (s *temporaryDocumentService) parse(
 		}
 	}
 	content := result.MarkdownContent
-	if enriched := s.applyImageUnderstanding(ctx, ext, options, data, pageImages, content); enriched != "" {
+	if options.SkipParsing {
+		content = ""
+		metadata["parser"] = "skipped"
+	} else if enriched := s.applyImageUnderstanding(ctx, ext, options, data, pageImages, content); enriched != "" {
 		content = enriched
 		metadata["image_understanding"] = "vlm"
 	}

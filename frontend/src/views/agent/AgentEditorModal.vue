@@ -846,7 +846,7 @@
               <p class="desc">{{ $t('agentEditor.chatParser.waitTimeoutDesc') }}</p>
             </div>
             <div class="setting-control">
-              <t-input-number v-model="formData.config.attachment_parse_wait_timeout_sec" :min="0" :max="600"
+              <t-input-number v-model="formData.config.attachment_parse_wait_timeout_sec" :min="-1" :max="600"
                 :step="10" theme="normal" style="width: 160px;"
                 :placeholder="$t('agentEditor.imageUpload.useGlobalDefault')" />
             </div>

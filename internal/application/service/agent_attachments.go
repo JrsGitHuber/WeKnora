@@ -65,7 +65,8 @@ func (a *agentSessionAttachments) ReadImage(ctx context.Context, ref string) ([]
 }
 
 // agentAttachmentParseWait honours the agent's own timeout, then
-// WEKNORA_CHAT_ATTACHMENT_WAIT_TIMEOUT_SEC, then the default.
+// WEKNORA_CHAT_ATTACHMENT_WAIT_TIMEOUT_SEC, then the default. -1 skips parsing
+// at upload time (SkipParsing) and keeps the default wait here.
 func agentAttachmentParseWait(config *types.AgentConfig) time.Duration {
 	if config != nil && config.AttachmentParseWaitTimeoutSec > 0 {
 		return time.Duration(config.AttachmentParseWaitTimeoutSec) * time.Second

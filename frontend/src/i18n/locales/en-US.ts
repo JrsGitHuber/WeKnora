@@ -8159,7 +8159,7 @@ export default {
       label: 'Chat Attachment Parsing Policy',
       desc: 'Choose a parser engine per file type for this agent\'s chat attachments.',
       waitTimeoutLabel: 'Attachment Parse Wait Timeout (s)',
-      waitTimeoutDesc: 'How long a chat turn waits for still-parsing attachments before proceeding with only the finished ones. Raise for large / scanned files. 0 uses the global default.'
+      waitTimeoutDesc: 'How long a chat turn waits for still-parsing attachments before proceeding with only the finished ones. Raise for large / scanned files. 0 uses the global default; -1 skips OCR/extraction for images and PDFs: originals / rendered pages are kept for direct viewing; other file types parse as usual.'
     },
     faq: {
       title: 'FAQ Priority Strategy',

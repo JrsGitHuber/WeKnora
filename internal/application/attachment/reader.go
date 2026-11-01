@@ -35,7 +35,8 @@ func NewReader(store Store, wait time.Duration, readImage func(context.Context, 
 }
 
 // WaitTimeout bounds parsing plus one image batch: the batch is described
-// concurrently, with room for one queue round behind other reads.
+// concurrently, with room for one queue round behind other reads. Zero means
+// no parse wait: unfinished documents are skipped immediately.
 func (r *Reader) WaitTimeout() time.Duration {
 	wait := r.parseWait
 	if r.Images != nil && r.Images.Describe != nil {
@@ -148,7 +149,8 @@ func findAttachment(inventory types.MessageAttachments, ref string) (types.Messa
 }
 
 // awaitDocument loads the document, polling while it is still being parsed
-// until parseWait elapses or ctx is cancelled.
+// until parseWait elapses or ctx is cancelled. A zero parseWait returns
+// unfinished documents immediately.
 func (r *Reader) awaitDocument(ctx context.Context, id string) (*types.TemporaryDocument, error) {
 	deadline := time.Now().Add(r.parseWait)
 	for {

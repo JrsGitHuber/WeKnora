@@ -180,6 +180,11 @@ type TemporaryDocumentCreateOptions struct {
 	// OCRMaxPages overrides the global VLM OCR page cap for this document.
 	// 0 uses the global default (WEKNORA_CHAT_ATTACHMENT_OCR_MAX_PAGES).
 	OCRMaxPages int `json:"ocr_max_pages,omitempty"`
+	// SkipParsing bypasses OCR/extraction for image and PDF uploads: images
+	// keep the original and PDF pages are rendered to images, all viewable
+	// directly. Other file types parse as usual. Set when the agent's
+	// AttachmentParseWaitTimeoutSec is -1.
+	SkipParsing bool `json:"skip_parsing,omitempty"`
 }
 
 type TemporaryDocumentPromptResult struct {

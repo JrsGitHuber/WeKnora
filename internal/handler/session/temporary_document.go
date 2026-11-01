@@ -86,6 +86,7 @@ func (h *Handler) UploadTemporaryDocument(c *gin.Context) {
 			options.ImageUnderstanding = agent.Config.AttachmentImageUnderstanding
 			options.OCRMaxPages = agent.Config.AttachmentOCRMaxPages
 		}
+		options.SkipParsing = agent.Config.AttachmentParseWaitTimeoutSec == -1
 	}
 	document, err := h.temporaryDocuments.Create(
 		ctx, c.GetUint64(types.TenantIDContextKey.String()), sessionID,

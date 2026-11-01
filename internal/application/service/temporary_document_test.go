@@ -1,14 +1,17 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"strings"
 	"sync"
 	"testing"
 
 	"github.com/Tencent/WeKnora/internal/models/vlm"
 	"github.com/Tencent/WeKnora/internal/types"
+	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
 
 // fakeVLM is a minimal VLM stub that records calls and returns a fixed response.
@@ -279,5 +282,83 @@ func TestSelectTemporaryDocumentContentHonorsSharedPromptBudget(t *testing.T) {
 	_, selected, total := selectTemporaryDocumentContentWithBudget(document, "", 2500)
 	if selected != 2 || total != 10 {
 		t.Fatalf("selected=%d total=%d, want 2/10 within a 2500-token share", selected, total)
+	}
+}
+
+type skipParseFileStore struct {
+	interfaces.FileService
+	data []byte
+}
+
+func (f *skipParseFileStore) GetFile(context.Context, string) (io.ReadCloser, error) {
+	return io.NopCloser(bytes.NewReader(f.data)), nil
+}
+
+func TestParseSkipParsingImageKeepsOriginalWithoutVLM(t *testing.T) {
+	svc := &temporaryDocumentService{fileService: &skipParseFileStore{data: []byte("png-bytes")}}
+	document := &types.TemporaryDocument{
+		ResourceRef: "local://original.png", FileName: "image.png", FileType: ".png",
+		MimeType: "image/png", ProcessingOptions: types.JSON(`{"skip_parsing":true,"vlm_model_id":"fake"}`),
+	}
+	content, images, metadata, err := svc.parse(context.Background(), document)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if content != "" {
+		t.Fatalf("content = %q, want empty (no OCR/extraction)", content)
+	}
+	if len(images) != 1 || images[0].URL != "local://original.png" {
+		t.Fatalf("images = %+v, want the original as the single viewable image", images)
+	}
+	if metadata["parser"] != "skipped" {
+		t.Fatalf("parser = %q, want skipped", metadata["parser"])
+	}
+}
+
+type skipParseCapturingReader struct {
+	interfaces.DocumentReader
+	req *types.ReadRequest
+}
+
+func (r *skipParseCapturingReader) Read(_ context.Context, req *types.ReadRequest) (*types.ReadResult, error) {
+	r.req = req
+	return &types.ReadResult{MarkdownContent: "![page-1](images/page-1.jpg)"}, nil
+}
+
+func TestParseSkipParsingPDFRendersPagesWithoutOCR(t *testing.T) {
+	reader := &skipParseCapturingReader{}
+	svc := &temporaryDocumentService{
+		fileService:    &skipParseFileStore{data: []byte("pdf-bytes")},
+		documentReader: reader,
+	}
+	document := &types.TemporaryDocument{
+		ResourceRef: "local://doc.pdf", FileName: "doc.pdf", FileType: ".pdf",
+		ProcessingOptions: types.JSON(`{"skip_parsing":true,"vlm_model_id":"fake","parser_engine":"mineru"}`),
+	}
+	content, _, metadata, err := svc.parse(context.Background(), document)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if reader.req == nil || reader.req.ParserEngine != "builtin" ||
+		reader.req.ParserEngineOverrides["pdf_force_scanned"] != "true" {
+		t.Fatalf("request = %+v, want builtin with pdf_force_scanned=true", reader.req)
+	}
+	if content != "" || metadata["parser"] != "skipped" {
+		t.Fatalf("content=%q parser=%q, want empty content and skipped parser", content, metadata["parser"])
+	}
+}
+
+func TestParseSkipParsingLeavesOtherTypesToNormalPipeline(t *testing.T) {
+	svc := &temporaryDocumentService{fileService: &skipParseFileStore{data: []byte("hello")}}
+	document := &types.TemporaryDocument{
+		ResourceRef: "local://file", FileName: "file.txt", FileType: ".txt",
+		ProcessingOptions: types.JSON(`{"skip_parsing":true}`),
+	}
+	content, images, metadata, err := svc.parse(context.Background(), document)
+	if err != nil || content != "hello" || len(images) != 0 {
+		t.Fatalf("content=%q images=%d err=%v, want the normal plain-text path", content, len(images), err)
+	}
+	if metadata["parser"] != "plain_text" {
+		t.Fatalf("parser = %q, want plain_text (normal pipeline)", metadata["parser"])
 	}
 }

@@ -284,7 +284,10 @@ type CustomAgentConfig struct {
 	// AttachmentParseWaitTimeoutSec bounds, in seconds, how long a chat turn
 	// waits for this agent's still-parsing attachments before proceeding with
 	// only the finished ones. 0 falls back to the global default
-	// (WEKNORA_CHAT_ATTACHMENT_WAIT_TIMEOUT_SEC).
+	// (WEKNORA_CHAT_ATTACHMENT_WAIT_TIMEOUT_SEC); -1 skips OCR/extraction for
+	// images and PDFs: images keep the original and PDF pages are rendered to
+	// images for direct viewing, while other file types parse as usual and the
+	// wait keeps the global default.
 	AttachmentParseWaitTimeoutSec int `yaml:"attachment_parse_wait_timeout_sec" json:"attachment_parse_wait_timeout_sec,omitempty"`
 
 	// ===== Data Analysis Settings =====

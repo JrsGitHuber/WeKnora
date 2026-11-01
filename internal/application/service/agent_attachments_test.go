@@ -209,6 +209,7 @@ func TestAgentAttachmentParseWaitConfiguration(t *testing.T) {
 	t.Setenv("WEKNORA_CHAT_ATTACHMENT_WAIT_TIMEOUT_SEC", "90")
 	assert.Equal(t, 90*time.Second, agentAttachmentParseWait(&types.AgentConfig{}))
 	assert.Equal(t, 120*time.Second, agentAttachmentParseWait(&types.AgentConfig{AttachmentParseWaitTimeoutSec: 120}))
+	assert.Equal(t, 90*time.Second, agentAttachmentParseWait(&types.AgentConfig{AttachmentParseWaitTimeoutSec: -1}), "-1 skips parsing at upload, the wait keeps the default")
 	t.Setenv("WEKNORA_CHAT_ATTACHMENT_WAIT_TIMEOUT_SEC", "invalid")
 	assert.Equal(t, defaultAgentAttachmentParseWait, agentAttachmentParseWait(nil))
 }

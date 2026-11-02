@@ -2032,12 +2032,44 @@ def _strip_repeating_lines(texts: list, classes: list) -> list:
     return cleaned
 
 
+def _pop_render_overrides(kwargs: dict) -> tuple:
+    """Pop optional per-upload render overrides from parser kwargs.
+
+    ``pdf_render_dpi`` and ``pdf_render_max_edge`` override the global
+    CONFIG values for this upload only (e.g. the Go App requests a sharper
+    render when the user chose to view PDF pages directly instead of
+    extracting text). Invalid values fall back to the global config.
+    """
+    def _to_int(raw):
+        try:
+            return max(0, int(float(raw)))
+        except (TypeError, ValueError):
+            return None
+
+    dpi = _to_int(kwargs.pop("pdf_render_dpi", None))
+    max_edge = _to_int(kwargs.pop("pdf_render_max_edge", None))
+    return dpi, max_edge
+
+
 class PDFScannedParser(BaseParser):
     """Render every PDF page to a JPEG image.
 
     Used as a robust last-resort fallback and for image-only PDFs. The Go App
     performs OCR on the extracted page images.
     """
+
+    def __init__(self, file_name: str = "", file_type=None, **kwargs):
+        self._render_dpi_override, self._render_max_edge_override = _pop_render_overrides(kwargs)
+        super().__init__(file_name=file_name, file_type=file_type, **kwargs)
+
+    def _render_scale(self) -> float:
+        dpi = self._render_dpi_override or CONFIG.pdf_render_dpi
+        return max(1, dpi) / 72
+
+    def _render_max_edge(self) -> int:
+        if self._render_max_edge_override is not None:
+            return self._render_max_edge_override
+        return CONFIG.pdf_render_max_edge
 
     def parse_into_text(self, content: bytes) -> Document:
         import pypdfium2 as pdfium
@@ -2060,7 +2092,7 @@ class PDFScannedParser(BaseParser):
                 pdf = pdfium.PdfDocument(content)
                 try:
                     page_count = len(pdf)
-                    scale = max(1, CONFIG.pdf_render_dpi) / 72
+                    scale = self._render_scale()
                     quality = _normalize_image_quality(CONFIG.pdf_jpeg_quality)
 
                     rendered = _render_scanned_pages(
@@ -2069,7 +2101,7 @@ class PDFScannedParser(BaseParser):
                         list(range(page_count)),
                         scale,
                         quality,
-                        CONFIG.pdf_render_max_edge,
+                        self._render_max_edge(),
                     )
                 finally:
                     _close_pdfium_resource(pdf)
@@ -2147,7 +2179,7 @@ class PDFScannedParser(BaseParser):
         if page_count == 0:
             return ParsedDocumentStream(document=document, image_count=0)
 
-        scale = max(1, CONFIG.pdf_render_dpi) / 72
+        scale = self._render_scale()
         quality = _normalize_image_quality(CONFIG.pdf_jpeg_quality)
         indices = list(range(page_count))
 
@@ -2161,7 +2193,7 @@ class PDFScannedParser(BaseParser):
                 base_name,
                 scale,
                 quality,
-                CONFIG.pdf_render_max_edge,
+                self._render_max_edge(),
                 CONFIG.pdf_render_parallelism,
             ),
             _cleanup=lambda: _unlink_pdf_temp_file(pdf_path),
@@ -2187,6 +2219,7 @@ class PDFParser(BaseParser):
     def __init__(self, file_name: str = "", file_type=None, **kwargs):
         # Capture per-upload override before BaseParser consumes kwargs.
         raw = kwargs.pop("pdf_force_scanned", None)
+        self._render_dpi_override, self._render_max_edge_override = _pop_render_overrides(kwargs)
         super().__init__(file_name=file_name, file_type=file_type, **kwargs)
         # Priority: per-upload override > global env > default (False).
         if raw is not None:
@@ -2196,6 +2229,16 @@ class PDFParser(BaseParser):
         else:
             self._force_scanned = FORCE_SCANNED_PDF
 
+    def _scanned_parser(self) -> "PDFScannedParser":
+        kwargs = {}
+        if self._render_dpi_override:
+            kwargs["pdf_render_dpi"] = self._render_dpi_override
+        if self._render_max_edge_override is not None:
+            kwargs["pdf_render_max_edge"] = self._render_max_edge_override
+        return PDFScannedParser(
+            file_name=self.file_name, file_type=self.file_type, **kwargs
+        )
+
     def parse_into_text(self, content: bytes) -> Document:
         # Force-scanned short-circuit: render every page as an image.
         if self._force_scanned:
@@ -2203,9 +2246,7 @@ class PDFParser(BaseParser):
                 "PDFParser: force scanned mode enabled for %s",
                 self.file_name,
             )
-            doc = PDFScannedParser(
-                file_name=self.file_name, file_type=self.file_type
-            ).parse_into_text(content)
+            doc = self._scanned_parser().parse_into_text(content)
 
             # Align metadata fields with automatic scanned route
             page_count = doc.metadata.get("page_count", 0)
@@ -2225,16 +2266,12 @@ class PDFParser(BaseParser):
                 "falling back to full image rendering",
                 self.file_name,
             )
-            return PDFScannedParser(
-                file_name=self.file_name, file_type=self.file_type
-            ).parse_into_text(content)
+            return self._scanned_parser().parse_into_text(content)
 
     def parse_stream(self, content: bytes) -> ParsedDocumentStream:
         """Prepare PDF metadata, then render scanned pages only as consumed."""
         if self._force_scanned:
-            stream = PDFScannedParser(
-                file_name=self.file_name, file_type=self.file_type
-            ).parse_stream(content)
+            stream = self._scanned_parser().parse_stream(content)
             page_count = stream.document.metadata.get("page_count", 0)
             stream.document.metadata.update(
                 {
@@ -2257,9 +2294,7 @@ class PDFParser(BaseParser):
                 "falling back to full image rendering",
                 self.file_name,
             )
-            return PDFScannedParser(
-                file_name=self.file_name, file_type=self.file_type
-            ).parse_stream(content)
+            return self._scanned_parser().parse_stream(content)
 
         image_count = len(document.images or {}) + len(scanned_indices)
         if not scanned_indices:

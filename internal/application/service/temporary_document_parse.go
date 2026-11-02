@@ -207,13 +207,18 @@ func (s *temporaryDocumentService) parse(
 	}
 	if options.SkipParsing && strings.TrimPrefix(ext, ".") == "pdf" {
 		// Treat PDFs like image uploads: render every page to an image instead
-		// of extracting text, so the model views the pages directly.
+		// of extracting text, so the model views the pages directly. Request a
+		// sharper render than the OCR-oriented default (200 DPI / 2000 px):
+		// these pages are read visually, and fine details (drawings, small
+		// print) must survive zooming.
 		parserEngine = docparser.BuiltinEngineName
 		request.ParserEngine = parserEngine
 		if request.ParserEngineOverrides == nil {
 			request.ParserEngineOverrides = map[string]string{}
 		}
 		request.ParserEngineOverrides["pdf_force_scanned"] = "true"
+		request.ParserEngineOverrides["pdf_render_dpi"] = "400"
+		request.ParserEngineOverrides["pdf_render_max_edge"] = "4000"
 	}
 	deps := docparser.ReaderDeps{Overrides: request.ParserEngineOverrides, Remote: s.documentReader}
 	if s.tenantService != nil {

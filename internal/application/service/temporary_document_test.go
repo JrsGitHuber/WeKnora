@@ -340,8 +340,10 @@ func TestParseSkipParsingPDFRendersPagesWithoutOCR(t *testing.T) {
 		t.Fatalf("parse: %v", err)
 	}
 	if reader.req == nil || reader.req.ParserEngine != "builtin" ||
-		reader.req.ParserEngineOverrides["pdf_force_scanned"] != "true" {
-		t.Fatalf("request = %+v, want builtin with pdf_force_scanned=true", reader.req)
+		reader.req.ParserEngineOverrides["pdf_force_scanned"] != "true" ||
+		reader.req.ParserEngineOverrides["pdf_render_dpi"] != "400" ||
+		reader.req.ParserEngineOverrides["pdf_render_max_edge"] != "4000" {
+		t.Fatalf("request = %+v, want builtin with force-scanned and sharp render overrides", reader.req)
 	}
 	if content != "" || metadata["parser"] != "skipped" {
 		t.Fatalf("content=%q parser=%q, want empty content and skipped parser", content, metadata["parser"])

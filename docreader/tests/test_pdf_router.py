@@ -10,6 +10,7 @@ from PIL import Image
 import docreader.parser.pdf_parser as pdf_parser
 from docreader.parser.pdf_parser import (
     PDFParser,
+    PDFScannedParser,
     _classify_page,
     _encode_rendered_page_images,
     _filter_reading_columns,
@@ -975,6 +976,36 @@ class ForceScannedTest(unittest.TestCase):
         self.assertIn("![forced_page_1.jpg]", doc.content)
         self.assertIn("![forced_page_2.jpg]", doc.content)
         self.assertEqual(len(doc.images), 2)
+
+    def test_render_overrides_forwarded_to_scanned_parser(self):
+        """Per-upload render overrides reach the force-scanned render path."""
+        parser = PDFParser(
+            file_name="sharp.pdf",
+            file_type="pdf",
+            pdf_force_scanned="true",
+            pdf_render_dpi="400",
+            pdf_render_max_edge="4000",
+        )
+        scanned = parser._scanned_parser()
+        self.assertEqual(scanned._render_dpi_override, 400)
+        self.assertEqual(scanned._render_max_edge_override, 4000)
+        self.assertAlmostEqual(scanned._render_scale(), 400 / 72)
+        self.assertEqual(scanned._render_max_edge(), 4000)
+
+    def test_render_overrides_invalid_fall_back_to_config(self):
+        """Invalid render override values fall back to the global config."""
+        scanned = PDFScannedParser(
+            file_name="bad.pdf",
+            file_type="pdf",
+            pdf_render_dpi="not-a-number",
+            pdf_render_max_edge=None,
+        )
+        self.assertIsNone(scanned._render_dpi_override)
+        self.assertIsNone(scanned._render_max_edge_override)
+        self.assertEqual(
+            scanned._render_scale(), max(1, pdf_parser.CONFIG.pdf_render_dpi) / 72
+        )
+        self.assertEqual(scanned._render_max_edge(), pdf_parser.CONFIG.pdf_render_max_edge)
 
 
 if __name__ == "__main__":

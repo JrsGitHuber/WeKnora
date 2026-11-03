@@ -291,6 +291,17 @@ func (s *AgentCollaboration) attach(
 			} else {
 				registry.RegisterTool(tools.NewReadFileTool(nil).WithArtifacts(source))
 			}
+			// Generated files may outlive the sandbox that produced them, so
+			// export is offered even when this run has no live sandbox.
+			if exporter, ok := source.(tools.FileExporter); ok {
+				if existing, err := registry.GetTool(tools.ToolExportFile); err == nil {
+					if tool, ok := existing.(*tools.ExportFileTool); ok {
+						tool.WithArtifacts(exporter)
+					}
+				} else {
+					registry.RegisterTool(tools.NewExportFileTool().WithArtifacts(exporter))
+				}
+			}
 		}
 	}
 	s.replayStatus(ctx, b)

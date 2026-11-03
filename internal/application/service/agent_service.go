@@ -267,9 +267,12 @@ func (s *agentService) CreateAgentEngine(
 	// when no shell is available. File access still follows the sandbox
 	// capability independently of the existing SkillsEnabled execution gate.
 	s.registerSandboxShellIfAllowed(ctx, toolRegistry, sessionID, config)
-	s.registerSandboxFileTools(ctx, toolRegistry, sessionID, config)
+	sandboxStore := s.registerSandboxFileTools(ctx, toolRegistry, sessionID, config)
 	s.registerWebPageFiles(ctx, toolRegistry, config, sessionID, assistantMessageID)
 	attachmentReader := s.registerAttachmentReader(ctx, toolRegistry, config, sessionID)
+	s.registerFileExportTool(
+		ctx, toolRegistry, config, sessionID, assistantMessageID, sandboxStore, attachmentReader,
+	)
 	// Advertise cached service summaries independently of @mentions. Concrete
 	// tool definitions are published after describe, before the next model request.
 	toolRegistry.PrepareMCPTools(ctx)
@@ -617,37 +620,39 @@ func (s *agentService) registerSandboxFileTools(
 	toolRegistry *tools.ToolRegistry,
 	sessionID string,
 	config *types.AgentConfig,
-) {
+) sandbox.SessionFileStore {
 	if config != nil && config.SkillInstallMode() {
 		logger.Infof(ctx, "Skipping session file tools in skill install mode")
 		s.registerSkillFileTools(ctx, toolRegistry, sessionID, config)
-		return
+		return nil
 	}
 	sandboxMgr, err := s.resolveWorkspaceSandbox(ctx, sessionID, config)
 	if err != nil {
 		logger.Warnf(ctx, "Failed to resolve sandbox for file tools: %v", err)
-		return
+		return nil
 	}
 	if sandboxMgr == nil {
-		return
+		return nil
 	}
-	if store := sessionSandboxFileStore(sandboxMgr); store != nil {
-		if _, err := toolRegistry.GetTool(tools.ToolShellExec); err != nil {
-			toolRegistry.RegisterTool(tools.NewListSandboxFilesTool(store))
-		}
-		toolRegistry.RegisterTool(tools.NewReadFileTool(store))
-		// The per-round completion budget, not a fixed byte count, is what
-		// bounds one write; the tool advertises a limit derived from it.
-		toolRegistry.RegisterTool(tools.NewWriteSandboxFileTool(
-			store,
-			types.AgentRoundMaxCompletionTokensFor(config.MaxCompletionTokens, config.SandboxConfigID),
-		))
-		toolRegistry.RegisterTool(tools.NewEditSandboxFileTool(store))
-		logger.Infof(ctx, "Registered sandbox file primitives (listing is a no-shell fallback)")
-	} else {
+	store := sessionSandboxFileStore(sandboxMgr)
+	if store == nil {
 		logger.Infof(ctx, "Sandbox backend does not advertise session filesystem capability; "+
-			"list_sandbox_files/read_file/write_sandbox_file/edit_sandbox_file not registered")
+			"list_sandbox_files/read_file/write_sandbox_file/edit_sandbox_file/export_file not registered")
+		return nil
 	}
+	if _, err := toolRegistry.GetTool(tools.ToolShellExec); err != nil {
+		toolRegistry.RegisterTool(tools.NewListSandboxFilesTool(store))
+	}
+	toolRegistry.RegisterTool(tools.NewReadFileTool(store))
+	// The per-round completion budget, not a fixed byte count, is what
+	// bounds one write; the tool advertises a limit derived from it.
+	toolRegistry.RegisterTool(tools.NewWriteSandboxFileTool(
+		store,
+		types.AgentRoundMaxCompletionTokensFor(config.MaxCompletionTokens, config.SandboxConfigID),
+	))
+	toolRegistry.RegisterTool(tools.NewEditSandboxFileTool(store))
+	logger.Infof(ctx, "Registered sandbox file primitives (listing is a no-shell fallback)")
+	return store
 }
 
 // registerSkillFileTools registers write_skill_file / edit_skill_file for the

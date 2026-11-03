@@ -50,6 +50,12 @@ const (
 	ToolListSandboxFiles = "list_sandbox_files"
 	ToolWriteSandboxFile = "write_sandbox_file"
 	ToolEditSandboxFile  = "edit_sandbox_file"
+	// ToolExportFile publishes a conversation file as a time-limited download
+	// URL so an external tool, such as a custom MCP server, can fetch it.
+	// Like the sandbox file primitives it is registered from the run's
+	// capabilities (session sandbox, attachments, generated files), not from
+	// the allowlist: an agent with no files has nothing to export.
+	ToolExportFile = "export_file"
 	// ToolWriteSkillFile / ToolEditSkillFile write the skill tree under
 	// /opt/weknora/tenant/skills rather than /workspace, and exist only for
 	// the built-in skill installer. They are scoped to the one skill being
@@ -190,6 +196,7 @@ func SwitchManagedTools() []string {
 		ToolListSandboxFiles,
 		ToolWriteSandboxFile,
 		ToolEditSandboxFile,
+		ToolExportFile,
 		ToolWriteSkillFile,
 		ToolEditSkillFile,
 		ToolDiscoverMCPTools,
